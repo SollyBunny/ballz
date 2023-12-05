@@ -3,6 +3,8 @@ const ctx = can.getContext("2d");
 
 const e_score = document.getElementById("score");
 
+let scale = 1;
+
 let score = 0;
 let oldScore = "0";
 function updateScore() {
@@ -19,6 +21,22 @@ window.onresize = () => {
     boundingRadius = Math.max(can.width, can.height);
 }
 window.onresize();
+
+function sleep(time) {
+    return new Promise(resolve => setTimeout(resolve, time * 1000))
+}
+function easeInOut(t) {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+async function scaleUp() {
+    const from = scale;
+    const to = scale / 2;
+    for (let i = 0; i < 1; i += 0.01) {
+        const ease = easeInOut(i);
+        scale = to * ease + from * (1 - ease);
+        await sleep(0.01);
+    }
+}
 
 let ballDensity = 100;
 
@@ -63,12 +81,12 @@ class Ball {
         this.dead = false;
     }
     static create() {
-        const pos = Vector.fromPolar(boundingRadius * 1.5, Math.random() * 2 * Math.PI);
-        const size = Math.round(Math.random() ** 4 * 100) + 2;
+        const pos = Vector.fromPolar(boundingRadius / scale * 1.5, Math.random() * 2 * Math.PI);
+        const size = Math.round(Math.random() ** 4 * (mouse.r + 50)) / Math.sqrt(scale) + 1;
         return new Ball(
             pos,
-            Vector.fromPolar((1 / size) + Math.random() * 0.1, pos.dirWith(
-                Vector.fromPolar(Math.random() * boundingRadius, Math.random() * 2 * Math.PI),
+            Vector.fromPolar(((1 / size) + Math.random() * 0.1) / (scale ** 2), pos.dirWith(
+                Vector.fromPolar(Math.random() * boundingRadius / scale, Math.random() * 2 * Math.PI),
             )),
             size,
             `hsl(${Math.round(Math.random() * 360)}deg ${Math.round(Math.random() * 50) + 50}% ${Math.round(Math.random() * 50) + 50}%)`
@@ -77,7 +95,7 @@ class Ball {
     update(dx) {
         this.pos.iaddmul(this.vel, dx);
         this.alive += dx;
-        if (this.alive * this.vel.getMag() > boundingRadius * 3) {
+        if (this.alive * this.vel.getMag() > (boundingRadius + this.r) / scale * 3) {
             this.dead = true;
         }
     }
@@ -123,8 +141,18 @@ function frame() {
     }
     balls = balls.filter(ball => { return !ball.dead; });
 
-    // Render
+    // Scale
+
+    if (mouse.r * scale > 50) {
+        scaleUp();
+    }
+
+    ctx.resetTransform();
     ctx.clearRect(0, 0, can.width, can.height);
+    ctx.translate(can.width / 2, can.height / 2);
+    ctx.scale(scale, scale);
+
+    // Render
     for (const ball of balls) {
         ctx.fillStyle = ball.color;
         ctx.beginPath();
@@ -151,16 +179,37 @@ function frame() {
 
 function die() {
     alert("die");
+    reset();
+}
+function reset() {
     mouse.r = 5;
     balls = [];
     score = 0;
     updateScore();
+    mouse.pos.x = 0;
+    mouse.pos.y = 0;
+    scale = 1;
 }
-die();
+reset();
 
 window.onpointermove = event => {
-    mouse.pos.x = event.clientX;
-    mouse.pos.y = event.clientY;
+    const boundu = 0.95;
+    const boundl = 0.05;
+    let x = event.clientX / can.width;
+    if (x > boundu) {
+        x = boundu + (x - boundu) ** 2;
+    } else if (x < boundl) {
+        x = boundl - (boundl - x) ** 2;
+    }
+    let y = event.clientY / can.height;
+    if (y > boundu) {
+        y = boundu + Math.sqrt(y - boundu);
+    } else if (y < boundl) {
+        y = boundl - (boundl - y) ** 2;
+    }
+    console.log(x, y)
+    mouse.pos.x = (x * can.width - can.width / 2) / scale;
+    mouse.pos.y = (y * can.height - can.height / 2) / scale;
 };
 
 window.requestAnimationFrame(frame);
