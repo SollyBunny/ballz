@@ -28,7 +28,10 @@ function sleep(time) {
 function easeInOut(t) {
     return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
+let scaling = true;
 async function scaleUp() {
+    if (scaling) return;
+    scaling = true;
     const from = scale;
     const to = scale / 2;
     for (let i = 0; i < 1; i += 0.01) {
@@ -36,6 +39,7 @@ async function scaleUp() {
         scale = to * ease + from * (1 - ease);
         await sleep(0.01);
     }
+    scaling = false;
 }
 
 let ballDensity = 100;
@@ -178,6 +182,7 @@ function frame() {
 }
 
 function die() {
+    if (scaling) return;
     alert("die");
     reset();
 }
