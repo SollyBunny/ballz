@@ -1,6 +1,5 @@
 const can = document.getElementById("can");
 const ctx = can.getContext("2d");
-
 const e_score = document.getElementById("score");
 
 let scale = 1;
@@ -44,7 +43,7 @@ async function scaleUp() {
 }
 const anims = new Set();
 async function animBall(ball) {
-    thisAnim = ball;
+    thisAnim = ball.id;
     if (anims.has(thisAnim)) return;
     anims.add(thisAnim);
     ball.alive = NaN;
@@ -58,16 +57,18 @@ async function animBall(ball) {
         );
         const ease = easeInOut(i);
         ball.vel = Vector.merge(fromPos, toPos, ease);
+        if (ball.dead) return;
         await sleep(0.01);
-        if (!anims.has(thisAnim)) return;
     }
-    while (mouse.pos.getDisSquared(ball.pos) > mouse.r * mouse.r * 1.5) {
+    let speed = 0.5;
+    while (mouse.pos.getDisSquared(ball.pos) > mouse.r * mouse.r * 2 - speed * speed) {
         ball.vel = Vector.fromPolar(
-            0.5,
+            speed,
             -mouse.pos.dirWith(ball.pos) + Math.PI / 2
         );
+        speed += 0.01;
+        if (ball.dead) return;
         await sleep(0.01);
-        if (!anims.has(thisAnim)) return;
     }
     anims.delete(thisAnim);
     mouse.r += 1;
@@ -95,6 +96,16 @@ class Vector {
             to.y * factor + from.y * (1 - factor),
         );
     }
+    clone() {
+        return new Vector(
+            this.x,
+            this.y
+        );
+    }
+    set(other) {
+        this.x = other.x;
+        this.y = other.y;
+    }
     goMid(other) {
         this.x += other.x;
         this.y += other.y;
@@ -104,6 +115,12 @@ class Vector {
     iaddmul(other, mul) {
         this.x += other.x * mul;
         this.y += other.y * mul;
+    }
+    addmul(other, mul) {
+        return new Vector(
+            this.x + other.x * mul,
+            this.y + other.y * mul,
+        );
     }
     dirWith(other) {
         return Math.atan2(
@@ -121,14 +138,28 @@ class Vector {
     }
 }
 
+let gID = 0;
 class Ball {
     constructor(pos, vel, r, color) {
+        this.id = gID;
+        gID += 1;
         this.pos = pos;
         this.vel = vel;
         this.r = r;
         this.color = color;
         this.alive = 0;
         this.dead = false;
+        this.trail = [
+            pos,
+            pos.clone(),
+            pos.clone(),
+            pos.clone(),
+            pos.clone(),
+            pos.clone(),
+            pos.clone(),
+            pos.clone(),
+            pos.clone(),
+        ];
     }
     static create() {
         const pos = Vector.fromPolar(boundingRadius / scale * 1.5, Math.random() * 2 * Math.PI);
@@ -143,6 +174,11 @@ class Ball {
         );
     }
     update(dx) {
+        if (this.pos.getDisSquared(this.trail[1]) > this.vel.getMag() ** 2 + this.r ** 2) {
+            for (let i = this.trail.length - 1; i > 0; --i) {
+                this.trail[i].set(this.trail[i - 1]);
+            }
+        }
         this.pos.iaddmul(this.vel, dx);
         this.alive += dx;
         if (this.alive * this.vel.getMag() > (boundingRadius + this.r) / scale * 3) {
@@ -158,6 +194,7 @@ class Ball {
 }
 let balls = [];
 const mouse = new Ball(new Vector(), NaN, 5, "white");
+mouse.lastUpdate = performance.now();
 
 let timeOld = performance.now(), timeDelta = 0;
 function frame() {
@@ -174,10 +211,10 @@ function frame() {
     // Update
     score += timeDelta / 1000;
     updateScore();
-    balls.sort((a, b) => { return a.r - b.r; });
+    balls.sort((a, b) => { return b.r - a.r; });
     for (const ball of balls) {
         ball.update(timeDelta);
-        if (anims.has(ball)) continue;
+        if (anims.has(ball.id)) continue;
         if (ball.isColliding(mouse)) {
             if (mouse.r >= ball.r) {
                 animBall(ball);
@@ -199,8 +236,30 @@ function frame() {
     ctx.clearRect(0, 0, can.width, can.height);
     ctx.translate(can.width / 2, can.height / 2);
     ctx.scale(scale, scale);
+    
+    // Render Trails
+    // TODO: use offscreen canvas to draw overlapping alpha sections
+    for (const ball of balls) {
+        ctx.globalAlpha = 0.4;
+        ctx.fillStyle = ball.color;
+        let r = ball.r;
+        for (let i = 1; i < ball.trail.length; ++i) {
+            const part = ball.trail[i];
+            ctx.globalAlpha -= 0.15;
+            ctx.beginPath();
+            ctx.arc(
+                part.x, part.y,
+                r,
+                0, 2 * Math.PI
+            );
+            ctx.fill();
+            r -= ball.r / ball.trail.length;
+            ctx.globalAlpha -= 0.8;
+        }
+    }
 
-    // Render
+    // Render Balls
+    ctx.globalAlpha = 1;
     for (const ball of balls) {
         ctx.fillStyle = ball.color;
         ctx.beginPath();
@@ -212,26 +271,46 @@ function frame() {
         ctx.fill();
     }
 
-    // Cursor
-    ctx.fillStyle = "white";
-    ctx.beginPath();
-    ctx.arc(
-        mouse.pos.x, mouse.pos.y,
-        mouse.r,
-        0, 2 * Math.PI
-    );
-    ctx.fill();
+    // Mouse
+    if (mouse.lastUpdate > 10) {
+        mouse.lastUpdate = 0;
+        for (let i = mouse.trail.length - 1; i > 0; --i) {
+            mouse.trail[i].set(mouse.trail[i - 1]);
+        }
+    } else {
+        mouse.lastUpdate += timeDelta;
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = mouse.color;
+    let r = mouse.r;
+    for (const part of mouse.trail) {
+        ctx.beginPath();
+        ctx.arc(
+            part.x, part.y,
+            r,
+            0, 2 * Math.PI
+        );
+        ctx.fill();
+        r *= 0.8;
+        ctx.globalAlpha -= 0.8;
+    }
 
     window.requestAnimationFrame(frame);
 }
 
+let xOld = 0.5, yOld = 0.5;
 function die() {
     if (scaling) return;
+    e_score.textContent = "0";
     alert("die");
     reset();
 }
 function reset() {
     mouse.r = 5;
+    balls.forEach(ball => {
+        ball.dead = true;
+        ball.alive = 0;
+    })
     balls = [];
     score = 0;
     updateScore();
@@ -239,10 +318,13 @@ function reset() {
     mouse.pos.y = 0;
     scale = 1;
     scaling = false;
+    xOld = 0.5;
+    yOld = 0.5;
+    timeOld = performance.now();
 }
 reset();
 
-window.onpointermove = event => {
+window.addEventListener("pointermove", event => {
     const boundu = 0.95;
     const boundl = 0.05;
     const factor = 0.7;
@@ -258,15 +340,38 @@ window.onpointermove = event => {
     } else if (y < boundl) {
         y = boundl - (boundl - y) * factor;
     }
+    x += xOld;
+    y += yOld;
+    x /= 2;
+    y /= 2;
+    xOld = x;
+    yOld = y;
     mouse.pos.x = (x * can.width - can.width / 2) / scale;
     mouse.pos.y = (y * can.height - can.height / 2) / scale;
-};
-window.onkeydown = event => {
+});
+window.addEventListener("onkeydown", event => {
     if (event.key === "N") {
         for (const ball of balls) {
             animBall(ball);
         }
     }
+});
+let hue = localStorage["ballz.hue"];
+if (hue !== undefined) {
+    hue = parseInt(hue);
+    if (hue === NaN) {
+        hue = 0;
+    } else {
+        mouse.color = `hsl(${hue}deg 50% 50%)`;
+    }
 }
+
+window.addEventListener("wheel", event => {
+    if (hue === undefined) hue = 0;
+    hue += 5;
+    hue %= 360;
+    mouse.color = `hsl(${hue}deg 50% 50%)`;
+    localStorage["ballz.hue"] = hue;
+}, { passive: true });
 
 window.requestAnimationFrame(frame);
