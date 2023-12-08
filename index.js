@@ -50,23 +50,23 @@ async function animBall(ball) {
     const from = scale;
     const to = scale / 2;
     const fromPos = ball.vel;
+    let speed = 0.5 / scale;
     for (let i = 0; i < 1; i += 0.01) {
         const toPos = Vector.fromPolar(
-            0.5,
-            -mouse.pos.dirWith(ball.pos) + Math.PI / 2
+            speed,
+            mouse.pos.dirWith(ball.pos)
         );
         const ease = easeInOut(i);
         ball.vel = Vector.merge(fromPos, toPos, ease);
         if (ball.dead) return;
         await sleep(0.01);
     }
-    let speed = 0.5;
     while (mouse.pos.getDisSquared(ball.pos) > mouse.r * mouse.r * 2 - speed * speed) {
         ball.vel = Vector.fromPolar(
             speed,
-            -mouse.pos.dirWith(ball.pos) + Math.PI / 2
+            mouse.pos.dirWith(ball.pos)
         );
-        speed += 0.01;
+        speed += 0.01 / scale;
         if (ball.dead) return;
         await sleep(0.01);
     }
@@ -116,6 +116,12 @@ class Vector {
         this.x += other.x * mul;
         this.y += other.y * mul;
     }
+    add(other) {
+        return new Vector(
+            this.x + other.x,
+            this.y + other.y,
+        );
+    }
     addmul(other, mul) {
         return new Vector(
             this.x + other.x * mul,
@@ -123,10 +129,10 @@ class Vector {
         );
     }
     dirWith(other) {
-        return Math.atan2(
+        return -Math.atan2(
             this.y - other.y,
             this.x - other.x
-        );
+        ) + Math.PI / 2;
     }
     getDisSquared(other) {
         const dx = this.x - other.x;
@@ -166,7 +172,7 @@ class Ball {
         const size = Math.round(Math.random() ** 4 * (mouse.r + 50)) / Math.sqrt(scale) + 1;
         return new Ball(
             pos,
-            Vector.fromPolar(((1 / size) + Math.random() * 0.1) / (scale ** 2), pos.dirWith(
+            Vector.fromPolar(((1 / size) + Math.random() * 0.1) / (scale ** 2), -pos.dirWith(
                 Vector.fromPolar(Math.random() * boundingRadius / scale, Math.random() * 2 * Math.PI),
             )),
             size,
@@ -238,24 +244,47 @@ function frame() {
     ctx.scale(scale, scale);
     
     // Render Trails
-    // TODO: use offscreen canvas to draw overlapping alpha sections
-    for (const ball of balls) {
+    function renderTrail(ball) {
+        let r = ball.r;
+        let path = []
+        let pathLoopAround = [];
+        for (let i = 0; i < ball.trail.length; ++i) {
+            const part = ball.trail[i];
+            let dir;
+            if (i == 0) {
+                dir = ball.trail[1].dirWith(part) + Math.PI / 2;
+            } else {
+                const prevpart = ball.trail[i - 1];
+                dir = part.dirWith(prevpart) + Math.PI / 2;
+            }
+            path.push(part.add(
+                Vector.fromPolar(
+                    r,
+                    dir
+                ),
+            ))
+            pathLoopAround.push(part.add(
+                Vector.fromPolar(
+                    r,
+                    dir + Math.PI
+                ),
+            ))
+            r -= ball.r / ball.trail.length;
+        }
+        ctx.beginPath();
+        ctx.moveTo(path[0].x, path[0].y)
+        for (let i = 1; i < path.length; ++i) {
+            ctx.lineTo(path[i].x, path[i].y)
+        }
+        for (let i = pathLoopAround.length -1; i >= 0; --i) {
+            ctx.lineTo(pathLoopAround[i].x, pathLoopAround[i].y)
+        }
         ctx.globalAlpha = 0.4;
         ctx.fillStyle = ball.color;
-        let r = ball.r;
-        for (let i = 1; i < ball.trail.length; ++i) {
-            const part = ball.trail[i];
-            ctx.globalAlpha -= 0.15;
-            ctx.beginPath();
-            ctx.arc(
-                part.x, part.y,
-                r,
-                0, 2 * Math.PI
-            );
-            ctx.fill();
-            r -= ball.r / ball.trail.length;
-            ctx.globalAlpha -= 0.8;
-        }
+        ctx.fill();
+    }
+    for (const ball of balls) {
+        renderTrail(ball);
     }
 
     // Render Balls
@@ -280,20 +309,16 @@ function frame() {
     } else {
         mouse.lastUpdate += timeDelta;
     }
+    renderTrail(mouse);
     ctx.globalAlpha = 1;
     ctx.fillStyle = mouse.color;
-    let r = mouse.r;
-    for (const part of mouse.trail) {
-        ctx.beginPath();
-        ctx.arc(
-            part.x, part.y,
-            r,
-            0, 2 * Math.PI
-        );
-        ctx.fill();
-        r *= 0.8;
-        ctx.globalAlpha -= 0.8;
-    }
+    ctx.beginPath();
+    ctx.arc(
+        mouse.pos.x, mouse.pos.y,
+        mouse.r,
+        0, 2 * Math.PI
+    );
+    ctx.fill();
 
     window.requestAnimationFrame(frame);
 }
