@@ -1,3 +1,5 @@
+<link rel="icon" href="./favicon.ico" type="image/x-icon">
+
 <title> Ballz </title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 
@@ -29,10 +31,29 @@
         animation: rotate 2s alternate infinite ease-in-out;
         user-select: none;
     }
+    #pause {
+        position: absolute;
+        bottom: 1vmin;
+        width: 50vw;
+        left: 50vw;
+        transform: translate(-50%);
+        text-align: center;
+        user-select: none;
+        color: white;
+        font-size: 50%;
+        padding-top: 10%;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+        #pause:hover {
+            opacity: 1 !important;
+        }
 </style>
 
 <h1 id="score">0</h1>
 
 <canvas id="can"></canvas>
+
+<div id="pause">Press P or right click to <span id="pausetext">Pause</span></div>
 
 <script src="index.js"></script>

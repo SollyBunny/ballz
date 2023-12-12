@@ -1,6 +1,28 @@
 const can = document.getElementById("can");
 const ctx = can.getContext("2d");
+
 const e_score = document.getElementById("score");
+const e_pause = document.getElementById("pause");
+const e_pausetext = document.getElementById("pausetext");
+let paused = false;
+let resetwaiting = false;
+function pause() {
+    if (paused) {
+        if (resetwaiting) {
+            resetwaiting = false;
+            reset();
+        }
+        e_pause.style.opacity = "0";
+        window.setTimeout(() => {
+            e_pausetext.textContent = "pause";
+            paused = false;
+        }, 300);
+    } else {
+        e_pausetext.textContent = "unpause";
+        e_pause.style.opacity = "1";
+        paused = true;
+    }
+}
 
 let scale = 1;
 
@@ -60,8 +82,9 @@ async function animBall(ball) {
         ball.vel = Vector.merge(fromPos, toPos, ease);
         if (ball.dead) return;
         await sleep(0.01);
+        while (paused) await sleep(0.1);
     }
-    while (mouse.pos.getDisSquared(ball.pos) > mouse.r * mouse.r * 2 - speed * speed) {
+    while (mouse.pos.getDisSquared(ball.pos) > (mouse.r + ball.r - speed) ** 2) {
         ball.vel = Vector.fromPolar(
             speed,
             mouse.pos.dirWith(ball.pos)
@@ -69,6 +92,7 @@ async function animBall(ball) {
         speed += 0.01 / scale;
         if (ball.dead) return;
         await sleep(0.01);
+        while (paused) await sleep(0.1);
     }
     anims.delete(thisAnim);
     mouse.r += 1;
@@ -115,6 +139,10 @@ class Vector {
     iaddmul(other, mul) {
         this.x += other.x * mul;
         this.y += other.y * mul;
+    }
+    iadd(other) {
+        this.x += other.x;
+        this.y += other.y;
     }
     add(other) {
         return new Vector(
@@ -169,20 +197,26 @@ class Ball {
     }
     static create() {
         const pos = Vector.fromPolar(boundingRadius / scale * 1.5, Math.random() * 2 * Math.PI);
-        const size = Math.round(Math.random() ** 4 * (mouse.r + 50)) / Math.sqrt(scale) + 1;
+        const size = mouse.r * (Math.random() ** (1/3) + 0.5) + 1 / scale;
+        const vel = Vector.fromPolar(((1 / size) + Math.random() * 0.1) / (scale ** 1.5), -pos.dirWith(
+            Vector.fromPolar(Math.random() * boundingRadius / scale, Math.random() * 2 * Math.PI),
+        ));
         return new Ball(
-            pos,
-            Vector.fromPolar(((1 / size) + Math.random() * 0.1) / (scale ** 2), -pos.dirWith(
-                Vector.fromPolar(Math.random() * boundingRadius / scale, Math.random() * 2 * Math.PI),
-            )),
-            size,
+            pos, vel, size,
             `hsl(${Math.round(Math.random() * 360)}deg ${Math.round(Math.random() * 50) + 50}% ${Math.round(Math.random() * 50) + 50}%)`
         );
     }
     update(dx) {
-        if (this.pos.getDisSquared(this.trail[1]) > this.vel.getMag() ** 2 + this.r ** 2) {
-            for (let i = this.trail.length - 1; i > 0; --i) {
-                this.trail[i].set(this.trail[i - 1]);
+        const maxdis = (this.vel.getMag() + this.r) / 2; 
+        for (let i = 1; i < this.trail.length; ++i) {
+            const dis = Math.sqrt(this.trail[i].getDisSquared(this.trail[i - 1]));
+            if (dis > maxdis) {
+                this.trail[i].iadd(
+                    Vector.fromPolar(
+                        dis - maxdis,
+                        this.trail[i - 1].dirWith(this.trail[i])
+                    )
+                );
             }
         }
         this.pos.iaddmul(this.vel, dx);
@@ -196,10 +230,27 @@ class Ball {
         const r = this.r + other.r;
         return r * r > d;
     }
-
+}
+class Mouse {
+    constructor(pos, r, color) {
+        this.pos = pos;
+        this.r = r;
+        this.color = color;
+        this.trail = [
+            pos,
+            pos.clone(),
+            pos.clone(),
+            pos.clone(),
+            pos.clone(),
+            pos.clone(),
+            pos.clone(),
+            pos.clone(),
+            pos.clone(),
+        ];
+    }
 }
 let balls = [];
-const mouse = new Ball(new Vector(), NaN, 5, "white");
+const mouse = new Mouse(new Vector(), 5, "white");
 mouse.lastUpdate = performance.now();
 
 let timeOld = performance.now(), timeDelta = 0;
@@ -208,49 +259,74 @@ function frame() {
     timeDelta = timeNow - timeOld;
     timeOld = timeNow;
 
-    // New Ball
-    if (balls.length < can.width * can.height / ballDensity) {
-        const ball = Ball.create();
-        balls.push(ball);
+    if (rainbow === 1) {
+        hue += rainbow * timeDelta;
+        hue %= 360;
+        mouse.color = `hsl(${hue}deg 50% 50%)`;
     }
 
-    // Update
-    score += timeDelta / 1000;
-    updateScore();
-    balls.sort((a, b) => { return b.r - a.r; });
-    for (const ball of balls) {
-        ball.update(timeDelta);
-        if (anims.has(ball.id)) continue;
-        if (ball.isColliding(mouse)) {
-            if (mouse.r >= ball.r) {
-                animBall(ball);
-            } else {
-                ball.color = "red";
-                die();
+    if (!paused) {
+        // New Ball
+        if (balls.length < can.width * can.height / ballDensity) {
+            const ball = Ball.create();
+            balls.push(ball);
+        }
+        // Update
+        score += timeDelta / 1000;
+        updateScore();
+        balls.sort((a, b) => { return b.r - a.r; });
+        for (const ball of balls) {
+            ball.update(timeDelta);
+            if (anims.has(ball.id)) continue;
+            if (ball.isColliding(mouse)) {
+                if (mouse.r >= ball.r) {
+                    animBall(ball);
+                } else {
+                    const decrease = timeDelta / 10 / scale;
+                    if (ball.r < decrease) {
+                        ball.dead = true;
+                        mouse.r -= ball.r;
+                    } else {
+                        ball.r -= decrease;
+                        mouse.r -= decrease;
+                    }
+                    if (mouse.r < 5) {
+                        ball.color = "red";
+                        mouse.r = 0;
+                        die();
+                    }
+                }
             }
         }
-    }
-    balls = balls.filter(ball => { return !ball.dead; });
-
-    // Scale
-
-    if (mouse.r * scale > 50) {
-        scaleUp();
+        balls = balls.filter(ball => { return !ball.dead; });
+        // Scale
+        if (mouse.r * scale > 50) {
+            scaleUp();
+        }
+        // Mouse
+        if (mouse.lastUpdate > 5) {
+            mouse.lastUpdate = 0;
+            for (let i = mouse.trail.length - 1; i > 0; --i) {
+                mouse.trail[i].set(mouse.trail[i - 1]);
+            }
+        } else {
+            mouse.lastUpdate += timeDelta;
+        }
     }
 
     ctx.resetTransform();
     ctx.clearRect(0, 0, can.width, can.height);
     ctx.translate(can.width / 2, can.height / 2);
     ctx.scale(scale, scale);
-    
+
     // Render Trails
     function renderTrail(ball) {
         let r = ball.r;
         let path = []
         let pathLoopAround = [];
+        let dir;
         for (let i = 0; i < ball.trail.length; ++i) {
             const part = ball.trail[i];
-            let dir;
             if (i == 0) {
                 dir = ball.trail[1].dirWith(part) + Math.PI / 2;
             } else {
@@ -271,17 +347,36 @@ function frame() {
             ))
             r -= ball.r / ball.trail.length;
         }
-        ctx.beginPath();
-        ctx.moveTo(path[0].x, path[0].y)
-        for (let i = 1; i < path.length; ++i) {
-            ctx.lineTo(path[i].x, path[i].y)
+        const path2d = new Path2D();
+        path2d.moveTo(path[0].x, path[0].y);
+        let i;
+        for (i = 1; i < path.length - 1; i++) {
+            const xc = (path[i].x + path[i + 1].x) / 2;
+            const yc = (path[i].y + path[i + 1].y) / 2;
+            path2d.quadraticCurveTo(path[i].x, path[i].y, xc, yc);
         }
-        for (let i = pathLoopAround.length -1; i >= 0; --i) {
-            ctx.lineTo(pathLoopAround[i].x, pathLoopAround[i].y)
+        const xc = (path[i].x + pathLoopAround[pathLoopAround.length - 1].x) / 2;
+        const yc = (path[i].y + pathLoopAround[pathLoopAround.length - 1].y) / 2;
+        path2d.quadraticCurveTo(
+            path[i].x, path[i].y,
+            xc, yc
+        );
+        for (i = pathLoopAround.length - 1; i > 1; i--) {
+            const xc = (pathLoopAround[i].x + pathLoopAround[i - 1].x) / 2;
+            const yc = (pathLoopAround[i].y + pathLoopAround[i - 1].y) / 2;
+            path2d.quadraticCurveTo(
+                pathLoopAround[i].x, pathLoopAround[i].y, 
+                xc, yc
+            );
         }
+        path2d.quadraticCurveTo(
+            pathLoopAround[i].x, pathLoopAround[i].y,
+            pathLoopAround[i - 1].x, pathLoopAround[i - 1].y
+        );
+        path2d.closePath();
         ctx.globalAlpha = 0.4;
         ctx.fillStyle = ball.color;
-        ctx.fill();
+        ctx.fill(path2d, "nonzero");
     }
     for (const ball of balls) {
         renderTrail(ball);
@@ -300,15 +395,7 @@ function frame() {
         ctx.fill();
     }
 
-    // Mouse
-    if (mouse.lastUpdate > 10) {
-        mouse.lastUpdate = 0;
-        for (let i = mouse.trail.length - 1; i > 0; --i) {
-            mouse.trail[i].set(mouse.trail[i - 1]);
-        }
-    } else {
-        mouse.lastUpdate += timeDelta;
-    }
+    // Render Mouse
     renderTrail(mouse);
     ctx.globalAlpha = 1;
     ctx.fillStyle = mouse.color;
@@ -325,17 +412,17 @@ function frame() {
 
 let xOld = 0.5, yOld = 0.5;
 function die() {
-    if (scaling) return;
-    e_score.textContent = "0";
-    alert("die");
-    reset();
+    e_pausetext.textContent = "play again";
+    e_pause.style.opacity = "1";
+    paused = true;
+    resetwaiting = true;
 }
 function reset() {
     mouse.r = 5;
     balls.forEach(ball => {
         ball.dead = true;
         ball.alive = 0;
-    })
+    });
     balls = [];
     score = 0;
     updateScore();
@@ -349,7 +436,20 @@ function reset() {
 }
 reset();
 
+let hue = localStorage["ballz.hue"];
+mouse.color = "white";
+if (hue !== undefined) {
+    hue = parseInt(hue);
+    if (hue === NaN) {
+        hue = 0;
+    } else {
+        mouse.color = `hsl(${hue}deg 50% 50%)`;
+    }
+}
+let rainbow = parseInt(localStorage["ballz.rainbow"]) || 0;
+
 window.addEventListener("pointermove", event => {
+    if (paused) return;
     const boundu = 0.95;
     const boundl = 0.05;
     const factor = 0.7;
@@ -374,23 +474,27 @@ window.addEventListener("pointermove", event => {
     mouse.pos.x = (x * can.width - can.width / 2) / scale;
     mouse.pos.y = (y * can.height - can.height / 2) / scale;
 });
-window.addEventListener("onkeydown", event => {
-    if (event.key === "N") {
-        for (const ball of balls) {
-            animBall(ball);
-        }
+window.addEventListener("keydown", event => {
+    const key = event.key.toLowerCase();
+    switch (key) {
+        case "p":
+            pause();
+            break;
     }
 });
-let hue = localStorage["ballz.hue"];
-if (hue !== undefined) {
-    hue = parseInt(hue);
-    if (hue === NaN) {
-        hue = 0;
-    } else {
-        mouse.color = `hsl(${hue}deg 50% 50%)`;
+window.addEventListener("contextmenu", event => {
+    event.preventDefault();
+    pause();
+});
+window.addEventListener("pointerdown", event => {
+    if (event.buttons === 4) {
+        rainbow = 1 - rainbow;
+        localStorage["rainbow.hue"] = rainbow;
+        return;
     }
-}
-
+    if (resetwaiting)
+        pause();
+});
 window.addEventListener("wheel", event => {
     if (hue === undefined) hue = 0;
     hue += 5;
@@ -398,5 +502,9 @@ window.addEventListener("wheel", event => {
     mouse.color = `hsl(${hue}deg 50% 50%)`;
     localStorage["ballz.hue"] = hue;
 }, { passive: true });
+document.addEventListener("visibilitychange", event => {
+    if (document.hidden && !paused)
+        pause();
+})
 
 window.requestAnimationFrame(frame);
