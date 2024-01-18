@@ -4,50 +4,51 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 
 <style>
-    body {
-        overflow: hidden;
-        background-image: radial-gradient(#222, #111);
-    }
-    #can {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100vw;
-        height: 100vh;
-    }
-    @keyframes rotate {
-        to { transform: rotate(2deg) }
-    }
-    #score {
-        top: 0;
-        left: 0;
-        font-size: 20vw;
-        font-weight: 900;
-        width: 100vw;
-        text-align: center;
-        color: gray;
-        text-shadow: 10px 10px rgba(0,0,0,0.2);
-        position: absolute;
-        animation: rotate 2s alternate infinite ease-in-out;
-        user-select: none;
-    }
-    #pause {
-        position: absolute;
-        bottom: 1vmin;
-        width: 50vw;
-        left: 50vw;
-        transform: translate(-50%);
-        text-align: center;
-        user-select: none;
-        color: white;
-        font-size: 50%;
-        padding-top: 10%;
-        opacity: 0;
-        transition: opacity 0.2s ease;
-    }
-        #pause:hover {
-            opacity: 1 !important;
-        }
+	body {
+		overflow: hidden;
+		background-image: radial-gradient(#222, #111);
+	}
+	#can {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 100vw;
+		height: 100vh;
+	}
+	@keyframes rotate {
+		to { transform: rotate(2deg) }
+	}
+	#score {
+		top: 0;
+		left: 0;
+		font-size: 20vw;
+		font-weight: 900;
+		width: 100vw;
+		text-align: center;
+		color: gray;
+		text-shadow: 10px 10px rgba(0,0,0,0.2);
+		position: absolute;
+		animation: rotate 2s alternate infinite ease-in-out;
+		user-select: none;
+		transition: 0.5s opacity ease;
+	}
+	#pause {
+		position: absolute;
+		bottom: 1vmin;
+		width: 50vw;
+		left: 50vw;
+		transform: translate(-50%);
+		text-align: center;
+		user-select: none;
+		color: white;
+		font-size: 50%;
+		padding-top: 10%;
+		opacity: 0;
+		transition: opacity 0.2s ease;
+	}
+		#pause:hover {
+			opacity: 1 !important;
+		}
 </style>
 
 <h1 id="score">0</h1>
